@@ -1,0 +1,146 @@
+{
+  "name": "Adaptmind Mission Alert Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "mission-complete",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "mission-complete"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.score }}",
+              "operation": "smaller",
+              "value2": 50
+            }
+          ]
+        }
+      },
+      "id": "if-low-score",
+      "name": "Check Score < 50",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "fromEmail": "alerts@adaptmind.com",
+        "toEmail": "={{ $json.parent_email }}",
+        "subject": "Learning Alert: {{ $json.student_name }} needs support",
+        "text": "Dear Parent,\n\nYour child {{ $json.student_name }} recently completed the mission \"{{ $json.mission_title }}\" with a score of {{ $json.score }}.\n\nThis score is below our threshold and may indicate they need additional support.\n\nCurrent Learning Metrics:\n- Logic Score: {{ $json.logic_score }}\n- Ethics Score: {{ $json.ethics_score }}\n- AI Orchestration Score: {{ $json.ai_orchestration_score }}\n\nWe recommend reviewing this mission together or reaching out to their instructor.\n\nBest regards,\nAdaptmind Team",
+        "options": {}
+      },
+      "id": "send-email",
+      "name": "Send Parent Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [650, 200]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO risk_alerts (student_id, mission_id, score, alert_reason) VALUES ('{{ $json.student_id }}', '{{ $json.mission_id }}', {{ $json.score }}, 'Low score alert: Score below 50 threshold')",
+        "options": {}
+      },
+      "id": "insert-risk-alert",
+      "name": "Log Risk Alert",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [650, 400],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "Supabase Postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"success\": true, \"message\": \"Alert processed\" } }}"
+      },
+      "id": "webhook-response",
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [850, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Check Score < 50",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Score < 50": {
+      "main": [
+        [
+          {
+            "node": "Send Parent Email",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log Risk Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Parent Email": {
+      "main": [
+        [
+          {
+            "node": "Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Risk Alert": {
+      "main": [
+        [
+          {
+            "node": "Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {},
+  "versionId": "1",
+  "id": "adaptmind-mission-alert",
+  "meta": {
+    "instanceId": "your-instance-id"
+  },
+  "tags": []
+}
