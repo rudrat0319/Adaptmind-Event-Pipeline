@@ -25,7 +25,7 @@ export class AppConfig {
         RiskAlert,
         IdempotencyKey,
       ],
-      synchronize: false, // Use migrations in production
+      synchronize: false,
       logging: process.env.NODE_ENV === 'development',
       ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
     });
@@ -39,7 +39,6 @@ export class AppConfig {
       throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
     }
 
-    // Optional but recommended
     if (!process.env.N8N_WEBHOOK_URL) {
       console.warn('Warning: N8N_WEBHOOK_URL not set. Webhook notifications will be disabled.');
     }
@@ -49,3 +48,4 @@ export class AppConfig {
     }
   }
 }
+
