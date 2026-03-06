@@ -2,39 +2,37 @@ import { LearningMetrics } from '../entities/LearningMetricsEntity';
 import { MissionCompleteRequestDto } from '../dtos/MissionCompleteRequestDto';
 
 export class ScoringService {
-  /**
-   * Calculate updated learning metrics based on mission performance
-   * Logic:
-   * - If score > 80: Increase logic_score by +5
-   * - If hints_used > 2: Reduce logic_score by -2
-   * - Future: Map mission types to ethics_score and ai_orchestration_score
-   */
+  
   calculateUpdatedMetrics(
-    currentMetrics: LearningMetrics,
+    currentMetrics: { sustainabilityUnderstanding: number; energyEfficiencyScore: number; decisionConfidence: number },
     missionData: MissionCompleteRequestDto
-  ): { logicScore: number; ethicsScore: number; aiOrchestrationScore: number } {
-    let logicScore = currentMetrics.logicScore;
-    let ethicsScore = currentMetrics.ethicsScore;
-    let aiOrchestrationScore = currentMetrics.aiOrchestrationScore;
+  ): { sustainabilityUnderstanding: number; energyEfficiencyScore: number; decisionConfidence: number } {
+    let sustainabilityUnderstanding = currentMetrics.sustainabilityUnderstanding;
+    let energyEfficiencyScore = currentMetrics.energyEfficiencyScore;
+    let decisionConfidence = currentMetrics.decisionConfidence;
 
-    // Apply logic score adjustments
     if (missionData.score > 80) {
-      logicScore += 5;
+      sustainabilityUnderstanding += 5;
+      energyEfficiencyScore += 3;
     }
 
-    if (missionData.hints_used > 2) {
-      logicScore -= 2;
+    if (missionData.energyUsed < 15) {
+      energyEfficiencyScore += 5;
     }
 
-    // Ensure scores stay within bounds [0, 100]
-    logicScore = Math.max(0, Math.min(100, logicScore));
-    ethicsScore = Math.max(0, Math.min(100, ethicsScore));
-    aiOrchestrationScore = Math.max(0, Math.min(100, aiOrchestrationScore));
+    decisionConfidence = Math.max(
+      decisionConfidence,
+      missionData.learningMetrics.decisionConfidence * 100
+    );
+
+    sustainabilityUnderstanding = Math.max(0, Math.min(100, sustainabilityUnderstanding));
+    energyEfficiencyScore = Math.max(0, Math.min(100, energyEfficiencyScore));
+    decisionConfidence = Math.max(0, Math.min(100, decisionConfidence));
 
     return {
-      logicScore,
-      ethicsScore,
-      aiOrchestrationScore,
+      sustainabilityUnderstanding,
+      energyEfficiencyScore,
+      decisionConfidence,
     };
   }
 }
