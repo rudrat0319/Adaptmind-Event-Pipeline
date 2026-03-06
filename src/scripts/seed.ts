@@ -13,7 +13,6 @@ async function seed() {
     await dataSource.initialize();
     console.log('Database connected');
 
-    // Create sample student
     const studentRepo = dataSource.getRepository(Student);
     const existingStudent = await studentRepo.findOne({ where: { name: 'Alice Johnson' } });
 
@@ -30,37 +29,35 @@ async function seed() {
       await studentRepo.save(student);
       console.log('Created student:', student.id);
 
-      // Create learning metrics for the student
       const metricsRepo = dataSource.getRepository(LearningMetrics);
       const metrics = metricsRepo.create({
         studentId: student.id,
-        logicScore: 50,
-        ethicsScore: 50,
-        aiOrchestrationScore: 50,
+        sustainabilityUnderstanding: 50,
+        energyEfficiencyScore: 50,
+        decisionConfidence: 50,
       });
       await metricsRepo.save(metrics);
       console.log('Created learning metrics for student');
     }
 
-    // Create sample missions
     const missionRepo = dataSource.getRepository(Mission);
     
     const missions = [
       {
-        id: 'ai-ethics-1',
-        title: 'Introduction to AI Ethics',
+        id: 'mission_1A',
+        title: 'Energy Source Selection Challenge',
         difficulty: 1,
         energyCost: 10,
       },
       {
-        id: 'logic-puzzle-1',
-        title: 'Basic Logic Puzzle',
+        id: 'mission_2B',
+        title: 'Sustainable Power Grid Design',
         difficulty: 2,
         energyCost: 15,
       },
       {
-        id: 'orchestration-1',
-        title: 'AI Orchestration Basics',
+        id: 'mission_3C',
+        title: 'Advanced Energy Optimization',
         difficulty: 3,
         energyCost: 20,
       },
@@ -82,11 +79,27 @@ async function seed() {
     console.log(`curl -X POST http://localhost:3000/mission-complete \\
   -H "Content-Type: application/json" \\
   -d '{
-    "student_id": "${student.id}",
-    "mission_id": "ai-ethics-1",
-    "score": 85,
-    "time_taken": 120,
-    "hints_used": 1
+    "eventId": "evt_test_001",
+    "timestamp": "2026-03-06T10:30:00Z",
+    "studentId": "${student.id}",
+    "missionId": "mission_1A",
+    "missionAttemptId": "attempt_test_001",
+    "score": 92,
+    "energyUsed": 17,
+    "timeTakenSeconds": 540,
+    "decisions": [
+      {"step": "energy_source_selection", "choice": "solar"},
+      {"step": "backup_power", "choice": "battery"}
+    ],
+    "learningMetrics": {
+      "sustainabilityUnderstanding": 0.90,
+      "energyEfficiencyScore": 0.88,
+      "decisionConfidence": 0.85
+    },
+    "device": {
+      "platform": "android",
+      "appVersion": "1.0.0"
+    }
   }'`);
 
     await dataSource.destroy();
