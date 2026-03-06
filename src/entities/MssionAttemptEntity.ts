@@ -19,8 +19,17 @@ export class MissionAttempt {
   @Column({ name: 'time_taken', type: 'integer' })
   timeTaken!: number;
 
-  @Column({ name: 'hints_used', type: 'integer', default: 0 })
-  hintsUsed!: number;
+  @Column({ name: 'energy_used', type: 'integer' })
+  energyUsed!: number;
+
+  @Column({ type: 'jsonb', nullable: true })
+  decisions!: object;
+
+  @Column({ name: 'device_platform', type: 'varchar', length: 50, nullable: true })
+  devicePlatform!: string;
+
+  @Column({ name: 'device_app_version', type: 'varchar', length: 20, nullable: true })
+  deviceAppVersion!: string;
 
   @CreateDateColumn({ name: 'completed_at', type: 'timestamptz' })
   completedAt!: Date;
