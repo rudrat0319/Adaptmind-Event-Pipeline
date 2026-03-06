@@ -1,8 +1,29 @@
+export interface DecisionDto {
+  step: string;
+  choice: string;
+}
+
+export interface LearningMetricsDto {
+  sustainabilityUnderstanding: number;
+  energyEfficiencyScore: number;
+  decisionConfidence: number;
+}
+
+export interface DeviceDto {
+  platform: string;
+  appVersion: string;
+}
+
 export interface MissionCompleteRequestDto {
-  student_id: string;
-  mission_id: string;
+  eventId: string;
+  timestamp: string;
+  studentId: string;
+  missionId: string;
+  missionAttemptId: string;
   score: number;
-  time_taken: number;
-  hints_used: number;
-  request_id?: string; // For idempotency
+  energyUsed: number;
+  timeTakenSeconds: number;
+  decisions: DecisionDto[];
+  learningMetrics: LearningMetricsDto;
+  device: DeviceDto;
 }
