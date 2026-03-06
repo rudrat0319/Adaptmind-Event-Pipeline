@@ -4,9 +4,9 @@ export interface MissionCompleteResponseDto {
   data?: {
     attemptId: string;
     updatedMetrics: {
-      logicScore: number;
-      ethicsScore: number;
-      aiOrchestrationScore: number;
+      sustainabilityUnderstanding: number;
+      energyEfficiencyScore: number;
+      decisionConfidence: number;
     };
   };
 }
