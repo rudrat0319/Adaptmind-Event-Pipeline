@@ -1,22 +1,23 @@
 import { N8nPayloadDto } from '../dtos/N8nPayloadDto';
 import { InfrastructureException } from '../exceptions/InfrastructureException';
+import { ExternalConfig } from '../config/app.config';
 
 export class NotificationService {
   private readonly n8nWebhookUrl: string;
-  private readonly maxRetries: number = 3;
-  private readonly retryDelayMs: number = 1000;
+  private readonly maxRetries: number;
+  private readonly retryDelayMs: number;
 
   constructor() {
-    this.n8nWebhookUrl = process.env.N8N_WEBHOOK_URL || '';
+    this.n8nWebhookUrl = ExternalConfig.n8nWebhookUrl;
+    this.maxRetries = ExternalConfig.webhookRetryAttempts;
+    this.retryDelayMs = ExternalConfig.webhookRetryBaseDelayMs;
     
     if (!this.n8nWebhookUrl) {
       console.warn('N8N_WEBHOOK_URL not configured. Webhook notifications will be skipped.');
     }
   }
 
-  /**
-   * Send mission completion event to n8n webhook with retry logic
-   */
+  
   async sendMissionCompletedEvent(payload: N8nPayloadDto): Promise<void> {
     if (!this.n8nWebhookUrl) {
       console.log('Skipping n8n notification (webhook URL not configured)');
