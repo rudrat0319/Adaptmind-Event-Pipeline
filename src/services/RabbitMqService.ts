@@ -1,15 +1,17 @@
-import amqp, { Connection, Channel } from 'amqplib';
+import amqp from 'amqplib';
 import { MissionCompletedEvent } from '../dtos/MissionCompletedEvent';
 import { InfrastructureException } from '../exceptions/InfrastructureException';
+import { QueueConfig } from '../config/app.config';
 
 export class RabbitMqService {
-  private connection: Connection | null = null;
-  private channel: Channel | null = null;
-  private readonly queueName = 'mission_completed';
+  private connection: amqp.ChannelModel | null = null;
+  private channel: amqp.Channel | null = null;
+  private readonly queueName: string;
   private readonly rabbitmqUrl: string;
 
   constructor() {
-    this.rabbitmqUrl = process.env.RABBITMQ_URL || 'amqp://localhost:5672';
+    this.rabbitmqUrl = QueueConfig.url;
+    this.queueName = QueueConfig.missionQueue;
   }
 
   async connect(): Promise<void> {
