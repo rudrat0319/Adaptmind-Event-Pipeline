@@ -38,7 +38,10 @@ CREATE TABLE mission_attempts (
     mission_id VARCHAR(50) REFERENCES missions(id) ON DELETE CASCADE,
     score INTEGER CHECK (score BETWEEN 0 AND 100),
     time_taken INTEGER,
-    hints_used INTEGER DEFAULT 0,
+    energy_used INTEGER DEFAULT 0,
+    decisions JSONB,
+    device_platform VARCHAR(50),
+    device_app_version VARCHAR(20),
     completed_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -46,9 +49,9 @@ CREATE TABLE mission_attempts (
 CREATE TABLE learning_metrics (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     student_id UUID UNIQUE REFERENCES students(id) ON DELETE CASCADE,
-    logic_score INTEGER DEFAULT 50 CHECK (logic_score BETWEEN 0 AND 100),
-    ethics_score INTEGER DEFAULT 50 CHECK (ethics_score BETWEEN 0 AND 100),
-    ai_orchestration_score INTEGER DEFAULT 50 CHECK (ai_orchestration_score BETWEEN 0 AND 100),
+    sustainability_understanding INTEGER DEFAULT 50 CHECK (sustainability_understanding BETWEEN 0 AND 100),
+    energy_efficiency_score INTEGER DEFAULT 50 CHECK (energy_efficiency_score BETWEEN 0 AND 100),
+    decision_confidence INTEGER DEFAULT 50 CHECK (decision_confidence BETWEEN 0 AND 100),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -84,7 +87,7 @@ CREATE INDEX idx_idempotency_lookup ON idempotency_keys(id);
 CREATE OR REPLACE FUNCTION create_student_metrics()
 RETURNS TRIGGER AS $$
 BEGIN
-    INSERT INTO learning_metrics (student_id, logic_score, ethics_score, ai_orchestration_score)
+    INSERT INTO learning_metrics (student_id, sustainability_understanding, energy_efficiency_score, decision_confidence)
     VALUES (NEW.id, 50, 50, 50);
     RETURN NEW;
 END;
