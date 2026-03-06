@@ -33,23 +33,17 @@ export class MissionController {
     this.rabbitMqService = rabbitMqService;
   }
 
-  /**
-   * POST /mission-complete
-   * Handles mission completion with atomic transaction processing
-   */
+ 
   async completeMission(request: MissionCompleteRequestDto): Promise<MissionCompleteResponseDto> {
-    // Validate request
     this.validateRequest(request);
 
-    const requestId = request.request_id || uuidv4();
+    const requestId = request.eventId;
 
-    // Start transaction
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
 
     try {
-      // 1. Check idempotency
       const idempotencyExists = await queryRunner.manager
         .getRepository('idempotency_keys')
         .findOne({ where: { id: requestId } });
@@ -58,30 +52,27 @@ export class MissionController {
         throw new IdempotencyException(requestId);
       }
 
-      // 2. Verify student exists
       const student = await queryRunner.manager
         .getRepository('students')
-        .findOne({ where: { id: request.student_id } });
+        .findOne({ where: { id: request.studentId } });
 
       if (!student) {
-        throw new EntityNotFoundException('Student', request.student_id);
+        throw new EntityNotFoundException('Student', request.studentId);
       }
 
-      // 3. Verify mission exists
       const mission = await queryRunner.manager
         .getRepository('missions')
-        .findOne({ where: { id: request.mission_id } });
+        .findOne({ where: { id: request.missionId } });
 
       if (!mission) {
-        throw new EntityNotFoundException('Mission', request.mission_id);
+        throw new EntityNotFoundException('Mission', request.missionId);
       }
 
-      // 4. Lock and read learning metrics
       const metrics = await queryRunner.manager
         .createQueryBuilder()
         .select('lm')
         .from('learning_metrics', 'lm')
-        .where('lm.student_id = :studentId', { studentId: request.student_id })
+        .where('lm.student_id = :studentId', { studentId: request.studentId })
         .setLock('pessimistic_write')
         .getRawOne();
 
@@ -89,61 +80,59 @@ export class MissionController {
         throw new InfrastructureException('Learning metrics not found for student');
       }
 
-      // 5. Calculate updated metrics
       const updatedScores = this.scoringService.calculateUpdatedMetrics(
         {
-          logicScore: metrics.logic_score,
-          ethicsScore: metrics.ethics_score,
-          aiOrchestrationScore: metrics.ai_orchestration_score,
-        } as any,
+          sustainabilityUnderstanding: metrics.sustainability_understanding,
+          energyEfficiencyScore: metrics.energy_efficiency_score,
+          decisionConfidence: metrics.decision_confidence,
+        },
         request
       );
 
-      // 6. Insert mission attempt
       const attemptResult = await queryRunner.manager
         .createQueryBuilder()
         .insert()
         .into('mission_attempts')
         .values({
-          student_id: request.student_id,
-          mission_id: request.mission_id,
+          id: request.missionAttemptId,
+          student_id: request.studentId,
+          mission_id: request.missionId,
           score: request.score,
-          time_taken: request.time_taken,
-          hints_used: request.hints_used,
+          time_taken: request.timeTakenSeconds,
+          energy_used: request.energyUsed,
+          decisions: JSON.stringify(request.decisions),
+          device_platform: request.device.platform,
+          device_app_version: request.device.appVersion,
         })
         .returning('id')
         .execute();
 
       const attemptId = attemptResult.identifiers[0].id;
 
-      // 7. Update learning metrics
       await queryRunner.manager
         .createQueryBuilder()
         .update('learning_metrics')
         .set({
-          logic_score: updatedScores.logicScore,
-          ethics_score: updatedScores.ethicsScore,
-          ai_orchestration_score: updatedScores.aiOrchestrationScore,
+          sustainability_understanding: updatedScores.sustainabilityUnderstanding,
+          energy_efficiency_score: updatedScores.energyEfficiencyScore,
+          decision_confidence: updatedScores.decisionConfidence,
           updated_at: new Date(),
         })
-        .where('student_id = :studentId', { studentId: request.student_id })
+        .where('student_id = :studentId', { studentId: request.studentId })
         .execute();
 
-      // 8. Log idempotency key
       await queryRunner.manager
         .createQueryBuilder()
         .insert()
         .into('idempotency_keys')
         .values({
           id: requestId,
-          student_id: request.student_id,
+          student_id: request.studentId,
         })
         .execute();
 
-      // Commit transaction
       await queryRunner.commitTransaction();
 
-      // 9. Publish event to RabbitMQ (async, outside transaction)
       const event: MissionCompletedEvent = {
         student_id: student.id,
         student_name: student.name,
@@ -151,14 +140,15 @@ export class MissionController {
         mission_id: mission.id,
         mission_title: mission.title,
         score: request.score,
-        time_taken: request.time_taken,
-        hints_used: request.hints_used,
+        time_taken: request.timeTakenSeconds,
+        energy_used: request.energyUsed,
+        decisions: request.decisions,
         updated_metrics: {
-          logic_score: updatedScores.logicScore,
-          ethics_score: updatedScores.ethicsScore,
-          ai_orchestration_score: updatedScores.aiOrchestrationScore,
+          sustainability_understanding: updatedScores.sustainabilityUnderstanding,
+          energy_efficiency_score: updatedScores.energyEfficiencyScore,
+          decision_confidence: updatedScores.decisionConfidence,
         },
-        completed_at: new Date().toISOString(),
+        completed_at: request.timestamp,
       };
 
       await this.rabbitMqService.publishMissionCompletedEvent(event);
@@ -180,20 +170,32 @@ export class MissionController {
   }
 
   private validateRequest(request: MissionCompleteRequestDto): void {
-    if (!request.student_id || !request.mission_id) {
-      throw new Error('student_id and mission_id are required');
+    if (!request.eventId || !request.studentId || !request.missionId || !request.missionAttemptId) {
+      throw new Error('eventId, studentId, missionId, and missionAttemptId are required');
     }
 
     if (typeof request.score !== 'number' || request.score < 0 || request.score > 100) {
       throw new Error('score must be a number between 0 and 100');
     }
 
-    if (typeof request.time_taken !== 'number' || request.time_taken < 0) {
-      throw new Error('time_taken must be a positive number');
+    if (typeof request.timeTakenSeconds !== 'number' || request.timeTakenSeconds < 0) {
+      throw new Error('timeTakenSeconds must be a positive number');
     }
 
-    if (typeof request.hints_used !== 'number' || request.hints_used < 0) {
-      throw new Error('hints_used must be a non-negative number');
+    if (typeof request.energyUsed !== 'number' || request.energyUsed < 0) {
+      throw new Error('energyUsed must be a non-negative number');
+    }
+
+    if (!Array.isArray(request.decisions)) {
+      throw new Error('decisions must be an array');
+    }
+
+    if (!request.learningMetrics || typeof request.learningMetrics !== 'object') {
+      throw new Error('learningMetrics is required');
+    }
+
+    if (!request.device || !request.device.platform || !request.device.appVersion) {
+      throw new Error('device information is required');
     }
   }
 }
