@@ -1,3 +1,5 @@
+import { DecisionDto } from './MissionCompleteRequestDto';
+
 export interface MissionCompletedEvent {
   student_id: string;
   student_name: string;
@@ -6,11 +8,12 @@ export interface MissionCompletedEvent {
   mission_title: string;
   score: number;
   time_taken: number;
-  hints_used: number;
+  energy_used: number;
+  decisions: DecisionDto[];
   updated_metrics: {
-    logic_score: number;
-    ethics_score: number;
-    ai_orchestration_score: number;
+    sustainability_understanding: number;
+    energy_efficiency_score: number;
+    decision_confidence: number;
   };
   completed_at: string;
 }
