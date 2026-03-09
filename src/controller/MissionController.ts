@@ -13,6 +13,12 @@ import { EntityNotFoundException } from '../exceptions/EntityNotFoundException';
 import { IdempotencyException } from '../exceptions/IdempotencyException';
 import { InfrastructureException } from '../exceptions/InfrastructureException';
 import { v4 as uuidv4 } from 'uuid';
+import { LearningMetrics } from '../entities/LearningMetricsEntity';
+import { Mission } from '../entities/MissionEntity';
+import { MissionAttempt } from '../entities/MssionAttemptEntity';
+import { IdempotencyKey } from '../entities/IdempotencyKeyEntity';
+import { Student } from '../entities/StudentEntity';
+
 
 export class MissionController {
   private studentRepo: StudentRepository;
@@ -35,141 +41,137 @@ export class MissionController {
 
  
   async completeMission(request: MissionCompleteRequestDto): Promise<MissionCompleteResponseDto> {
-    this.validateRequest(request);
+  this.validateRequest(request);
 
-    const requestId = request.eventId;
+  const requestId = request.eventId;
+  const queryRunner = this.dataSource.createQueryRunner();
+  await queryRunner.connect();
+  await queryRunner.startTransaction();
 
-    const queryRunner = this.dataSource.createQueryRunner();
-    await queryRunner.connect();
-    await queryRunner.startTransaction();
+  try {
+    const idempotencyExists = await queryRunner.manager
+      .getRepository(IdempotencyKey)
+      .findOne({ where: { id: requestId } });
 
-    try {
-      const idempotencyExists = await queryRunner.manager
-        .getRepository('idempotency_keys')
-        .findOne({ where: { id: requestId } });
+    if (idempotencyExists) {
+      throw new IdempotencyException(requestId);
+    }
 
-      if (idempotencyExists) {
-        throw new IdempotencyException(requestId);
-      }
+    const student = await queryRunner.manager
+      .getRepository(Student)
+      .findOne({ where: { id: request.studentId } });
 
-      const student = await queryRunner.manager
-        .getRepository('students')
-        .findOne({ where: { id: request.studentId } });
+    if (!student) {
+      throw new EntityNotFoundException('Student', request.studentId);
+    }
 
-      if (!student) {
-        throw new EntityNotFoundException('Student', request.studentId);
-      }
+    const mission = await queryRunner.manager
+      .getRepository(Mission)
+      .findOne({ where: { id: request.missionId } });
 
-      const mission = await queryRunner.manager
-        .getRepository('missions')
-        .findOne({ where: { id: request.missionId } });
+    if (!mission) {
+      throw new EntityNotFoundException('Mission', request.missionId);
+    }
 
-      if (!mission) {
-        throw new EntityNotFoundException('Mission', request.missionId);
-      }
+    const metrics = await queryRunner.manager
+      .getRepository(LearningMetrics)
+      .createQueryBuilder('lm')
+      .where('lm.studentId = :studentId', { studentId: request.studentId })
+      .setLock('pessimistic_write')
+      .getOne();
 
-      const metrics = await queryRunner.manager
-        .createQueryBuilder()
-        .select('lm')
-        .from('learning_metrics', 'lm')
-        .where('lm.student_id = :studentId', { studentId: request.studentId })
-        .setLock('pessimistic_write')
-        .getRawOne();
+    if (!metrics) {
+      throw new InfrastructureException('Learning metrics not found for student');
+    }
 
-      if (!metrics) {
-        throw new InfrastructureException('Learning metrics not found for student');
-      }
+    const updatedScores = this.scoringService.calculateUpdatedMetrics(
+      {
+        sustainabilityUnderstanding: metrics.sustainabilityUnderstanding,
+        energyEfficiencyScore: metrics.energyEfficiencyScore,
+        decisionConfidence: metrics.decisionConfidence,
+      },
+      request
+    );
 
-      const updatedScores = this.scoringService.calculateUpdatedMetrics(
+    const attemptResult = await queryRunner.manager
+      .createQueryBuilder()
+      .insert()
+      .into(MissionAttempt)
+      .values({
+        id: request.missionAttemptId,
+        studentId: request.studentId,
+        missionId: request.missionId,
+        score: request.score,
+        timeTaken: request.timeTakenSeconds,
+        energyUsed: request.energyUsed,
+        decisions: request.decisions,
+        devicePlatform: request.device.platform,
+        deviceAppVersion: request.device.appVersion,
+      })
+      .returning('id')
+      .execute();
+
+    const attemptId = attemptResult.identifiers[0].id;
+
+    await queryRunner.manager
+      .getRepository(LearningMetrics)
+      .update(
+        { studentId: request.studentId },
         {
-          sustainabilityUnderstanding: metrics.sustainability_understanding,
-          energyEfficiencyScore: metrics.energy_efficiency_score,
-          decisionConfidence: metrics.decision_confidence,
-        },
-        request
+          sustainabilityUnderstanding: updatedScores.sustainabilityUnderstanding,
+          energyEfficiencyScore: updatedScores.energyEfficiencyScore,
+          decisionConfidence: updatedScores.decisionConfidence,
+          updatedAt: new Date(),
+        }
       );
 
-      const attemptResult = await queryRunner.manager
-        .createQueryBuilder()
-        .insert()
-        .into('mission_attempts')
-        .values({
-          id: request.missionAttemptId,
-          student_id: request.studentId,
-          mission_id: request.missionId,
-          score: request.score,
-          time_taken: request.timeTakenSeconds,
-          energy_used: request.energyUsed,
-          decisions: JSON.stringify(request.decisions),
-          device_platform: request.device.platform,
-          device_app_version: request.device.appVersion,
-        })
-        .returning('id')
-        .execute();
+    await queryRunner.manager
+      .createQueryBuilder()
+      .insert()
+      .into(IdempotencyKey)
+      .values({
+        id: requestId,
+        studentId: request.studentId,
+      })
+      .returning('id')
+      .execute();
 
-      const attemptId = attemptResult.identifiers[0].id;
+    await queryRunner.commitTransaction();
 
-      await queryRunner.manager
-        .createQueryBuilder()
-        .update('learning_metrics')
-        .set({
-          sustainability_understanding: updatedScores.sustainabilityUnderstanding,
-          energy_efficiency_score: updatedScores.energyEfficiencyScore,
-          decision_confidence: updatedScores.decisionConfidence,
-          updated_at: new Date(),
-        })
-        .where('student_id = :studentId', { studentId: request.studentId })
-        .execute();
+    const event: MissionCompletedEvent = {
+      student_id: student.id,
+      student_name: student.name,
+      parent_email: student.parentEmail,
+      mission_id: mission.id,
+      mission_title: mission.title,
+      score: request.score,
+      time_taken: request.timeTakenSeconds,
+      energy_used: request.energyUsed,
+      decisions: request.decisions,
+      updated_metrics: {
+        sustainability_understanding: updatedScores.sustainabilityUnderstanding,
+        energy_efficiency_score: updatedScores.energyEfficiencyScore,
+        decision_confidence: updatedScores.decisionConfidence,
+      },
+      completed_at: request.timestamp,
+    };
 
-      await queryRunner.manager
-        .createQueryBuilder()
-        .insert()
-        .into('idempotency_keys')
-        .values({
-          id: requestId,
-          student_id: request.studentId,
-        })
-        .execute();
+    await this.rabbitMqService.publishMissionCompletedEvent(event);
 
-      await queryRunner.commitTransaction();
+    return {
+      success: true,
+      message: 'Mission completed successfully',
+      data: { attemptId, updatedMetrics: updatedScores },
+    };
 
-      const event: MissionCompletedEvent = {
-        student_id: student.id,
-        student_name: student.name,
-        parent_email: student.parent_email,
-        mission_id: mission.id,
-        mission_title: mission.title,
-        score: request.score,
-        time_taken: request.timeTakenSeconds,
-        energy_used: request.energyUsed,
-        decisions: request.decisions,
-        updated_metrics: {
-          sustainability_understanding: updatedScores.sustainabilityUnderstanding,
-          energy_efficiency_score: updatedScores.energyEfficiencyScore,
-          decision_confidence: updatedScores.decisionConfidence,
-        },
-        completed_at: request.timestamp,
-      };
-
-      await this.rabbitMqService.publishMissionCompletedEvent(event);
-
-      return {
-        success: true,
-        message: 'Mission completed successfully',
-        data: {
-          attemptId,
-          updatedMetrics: updatedScores,
-        },
-      };
-    } catch (error) {
-      await queryRunner.rollbackTransaction();
-      throw error;
-    } finally {
-      await queryRunner.release();
-    }
+  } catch (error) {
+    await queryRunner.rollbackTransaction();
+    throw error;
+  } finally {
+    await queryRunner.release();
   }
-
-  private validateRequest(request: MissionCompleteRequestDto): void {
+}
+private validateRequest(request: MissionCompleteRequestDto): void {
     if (!request.eventId || !request.studentId || !request.missionId || !request.missionAttemptId) {
       throw new Error('eventId, studentId, missionId, and missionAttemptId are required');
     }
